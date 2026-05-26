@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="현장뷰어">
+<meta name="theme-color" content="#3b82f6">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>현장 GeoPDF 뷰어</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{width:100%;height:100%;overflow:hidden;background:#1a1a2e;font-family:-apple-system,BlinkMacSystemFont,'Malgun Gothic',sans-serif;}
+
+#topbar{position:fixed;top:0;left:0;right:0;z-index:100;padding:8px 10px 6px;pointer-events:none;}
+#coord-box{background:white;border-radius:14px;padding:9px 13px;display:flex;align-items:center;gap:9px;box-shadow:0 2px 14px rgba(0,0,0,.28);pointer-events:all;}
+#coord-icon{width:34px;height:34px;border-radius:50%;background:#3b82f6;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+#coord-icon svg{width:17px;height:17px;fill:white;}
+#coord-main{flex:1;min-width:0;}
+#coord-label{font-size:10px;color:#888;margin-bottom:1px;}
+#coord-value{font-size:13px;font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+#acc-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;flex-shrink:0;background:#fefce8;color:#ca8a04;border:1px solid #fef08a;}
+#acc-badge.ok{background:#f0fdf4;color:#16a34a;border-color:#bbf7d0;}
+#acc-badge.bad{background:#fef2f2;color:#dc2626;border-color:#fecaca;}
+
+/* 방향 모드 뱃지 */
+#dir-badge{
+  position:fixed;top:68px;left:10px;z-index:101;
+  display:none;
+  background:rgba(255,255,255,.95);
+  border:0.5px solid #e2e8f0;
+  border-radius:99px;padding:4px 12px 4px 8px;
+  font-size:12px;font-weight:600;color:#374151;
+  box-shadow:0 1px 6px rgba(0,0,0,.12);
+  cursor:pointer;
+  align-items:center;gap:6px;
+}
+#dir-badge .dot{width:8px;height:8px;border-radius:50%;background:#3b82f6;flex-shrink:0;}
+#dir-badge.gps .dot{background:#10b981;}
+#dir-badge.off .dot{background:#94a3b8;}
+
+/* 나침반 */
+#compass-wrap{position:fixed;top:68px;right:10px;z-index:101;display:none;flex-direction:column;align-items:center;gap:3px;}
+#compass-ring{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.97);box-shadow:0 1px 8px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;position:relative;}
+#compass-svg{width:44px;height:44px;position:absolute;transition:transform .08s linear;}
+#compass-deg{font-size:10px;font-weight:600;color:#374151;background:rgba(255,255,255,.9);border-radius:5px;padding:1px 5px;}
+
+#map-wrap{position:fixed;top:0;left:0;right:0;bottom:72px;overflow:hidden;background:#2d3748;touch-action:none;}
+#map-stage{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform;}
+#pdf-canvas{display:block;position:relative;z-index:1;}
+
+/* ━━━━━━━━━━━━━━━━━━━━━
+   GPS 마커 (구글맵형)
+   ━━━━━━━━━━━━━━━━━━━━━ */
+#loc-marker{
+  position:absolute;
+  display:none;
+  z-index:10;
+  pointer-events:none;
+  /* 마커 중심이 GPS 좌표 */
+  transform:translate(-50%,-50%) rotate(0deg);
+  /* 위치 이동은 부드럽게, 회전은 JS로 보간 */
+  transition:left .35s cubic-bezier(.25,.46,.45,.94), top .35s cubic-bezier(.25,.46,.45,.94);
+}
+
+/* 업로드 */
+#upload-overlay{position:fixed;inset:0;z-index:200;background:linear-gradient(160deg,#0f172a,#1e3a5f);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:28px;}
+#upload-overlay h1{color:white;font-size:21px;font-weight:700;text-align:center;}
+#upload-overlay p{color:#94a3b8;font-size:14px;text-align:center;line-height:1.7;}
+.up-btn{background:#3b82f6;color:white;border:none;border-radius:14px;padding:13px 0;font-size:15px;font-weight:600;cursor:pointer;width:100%;max-width:300px;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:0 4px 20px rgba(59,130,246,.4);}
+.up-btn:active{transform:scale(.97);}
+.feat{display:flex;flex-direction:column;gap:8px;width:100%;max-width:300px;}
+.feat-row{background:rgba(255,255,255,.07);border-radius:10px;padding:8px 13px;display:flex;align-items:center;gap:9px;color:#cbd5e1;font-size:13px;}
+.feat-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+#file-input{display:none;}
+
+/* 하단바 */
+#bottombar{position:fixed;bottom:0;left:0;right:0;height:72px;background:white;border-top:1px solid #e5e7eb;display:none;align-items:center;justify-content:space-around;padding:0 4px;z-index:100;box-shadow:0 -2px 10px rgba(0,0,0,.1);}
+.bb-btn{display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 9px;border-radius:10px;border:none;background:transparent;cursor:pointer;font-size:10px;color:#6b7280;font-weight:500;}
+.bb-btn:active{transform:scale(.9);}
+.bb-btn.on{color:#3b82f6;}
+.bb-btn svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.8;}
+#my-btn{width:48px;height:48px;border-radius:50%;background:#3b82f6;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 3px 14px rgba(59,130,246,.5);margin-top:-10px;}
+#my-btn:active{transform:scale(.9);}
+#my-btn.on{background:#059669;}
+#my-btn svg{width:22px;height:22px;stroke:white;fill:none;stroke-width:2;}
+
+#zoom-wrap{position:fixed;right:10px;bottom:80px;z-index:99;display:none;flex-direction:column;gap:4px;}
+.z-btn{width:38px;height:38px;border-radius:10px;background:white;border:1px solid #e2e8f0;font-size:22px;color:#374151;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,.12);}
+.z-btn:active{transform:scale(.9);}
+#scalebar{position:fixed;left:10px;bottom:80px;z-index:99;display:none;background:rgba(255,255,255,.92);border-radius:6px;padding:3px 9px;font-size:11px;color:#374151;font-weight:600;border-bottom:2px solid #374151;border-left:2px solid #374151;border-right:2px solid #374151;}
+
+#loading{position:fixed;inset:0;z-index:300;background:rgba(15,23,42,.85);display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;}
+#loading p{color:white;font-size:15px;}
+.spin{width:40px;height:40px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:white;animation:sp .8s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg)}}
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(16px);background:rgba(17,24,39,.9);color:white;padding:8px 16px;border-radius:99px;font-size:13px;z-index:400;opacity:0;transition:all .25s;white-space:nowrap;pointer-events:none;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<div id="upload-overlay">
+  <div style="font-size:52px">🗺️</div>
+  <h1>현장 GeoPDF 뷰어</h1>
+  <p>GIS에서 내보낸 GeoPDF 업로드 시<br>내 위치 · 이동방향 · 5186 좌표 실시간 표시</p>
+  <label class="up-btn" for="file-input">
+    <svg width="19" height="19" fill="white" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+    GeoPDF 파일 열기
+  </label>
+  <input type="file" id="file-input" accept=".pdf">
+  <div class="feat">
+    <div class="feat-row"><div class="feat-dot" style="background:#3b82f6"></div>EPSG:5186 / 5179 실시간 좌표</div>
+    <div class="feat-row"><div class="feat-dot" style="background:#10b981"></div>구글맵형 방향 마커</div>
+    <div class="feat-row"><div class="feat-dot" style="background:#f59e0b"></div>나침반 + GPS 이동방향</div>
+  </div>
+  <button id="install-btn" onclick="window._installPWA && window._installPWA()" style="display:none;background:rgba(255,255,255,0.12);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:14px;padding:10px 0;font-size:14px;font-weight:600;cursor:pointer;width:100%;max-width:300px;align-items:center;justify-content:center;gap:8px;">
+    <svg width="17" height="17" fill="white" viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+    앱으로 설치하기
+  </button>
+</div>
+
+<div id="loading"><div class="spin"></div><p id="load-txt">로딩 중...</p></div>
+
+<!-- 상단 좌표바 -->
+<div id="topbar" style="display:none">
+  <div id="coord-box">
+    <div id="coord-icon"><svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></div>
+    <div id="coord-main">
+      <div id="coord-label">EPSG:5186</div>
+      <div id="coord-value">GPS 대기 중...</div>
+    </div>
+    <div id="acc-badge">대기</div>
+  </div>
+</div>
+
+<!-- 방향 모드 전환 뱃지 -->
+<div id="dir-badge" onclick="toggleDirMode()">
+  <div class="dot"></div>
+  <span id="dir-badge-txt">나침반</span>
+</div>
+
+<!-- 나침반 위젯 -->
+<div id="compass-wrap">
+  <div id="compass-ring">
+    <svg id="compass-svg" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="22,3 19,22 22,18 25,22" fill="#ef4444"/>
+      <polygon points="22,41 19,22 22,26 25,22" fill="#cbd5e1"/>
+      <circle cx="22" cy="22" r="3" fill="#1e293b"/>
+      <text x="22" y="12" text-anchor="middle" font-size="5.5" font-weight="700" fill="#ef4444" font-family="sans-serif">N</text>
+    </svg>
+  </div>
+  <div id="compass-deg">--°</div>
+</div>
+
+<!-- 지도 -->
+<div id="map-wrap">
+  <div id="map-stage">
+    <canvas id="pdf-canvas"></canvas>
+
+    <!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+         GPS 마커: 구글맵 스타일
+         - 시야각 부채꼴 (이동방향 표시)
+         - 파동 애니메이션
+         - 파란 원 (내 위치)
+         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+    <div id="loc-marker">
+      <svg id="marker-svg" width="72" height="84" viewBox="-36 -36 72 84" overflow="visible">
+
+        <!-- 1. 정확도 원 (GPS 오차 범위) -->
+        <circle id="acc-ring" cx="0" cy="0" r="28"
+          fill="rgba(59,130,246,0.07)"
+          stroke="rgba(59,130,246,0.25)"
+          stroke-width="1.5"/>
+
+        <!-- 2. 이동방향 부채꼴 (핵심!) - 위쪽이 전방 -->
+        <g id="direction-cone">
+          <!-- 부채꼴 영역 (시야각 ~50도) -->
+          <path d="M0,0 L-22,-52 A57,57 0 0,1 22,-52 Z"
+            fill="rgba(59,130,246,0.18)"
+            stroke="none"/>
+          <!-- 부채꼴 가장자리 선 -->
+          <line x1="0" y1="0" x2="-22" y2="-52"
+            stroke="rgba(59,130,246,0.35)" stroke-width="1" stroke-linecap="round"/>
+          <line x1="0" y1="0" x2="22" y2="-52"
+            stroke="rgba(59,130,246,0.35)" stroke-width="1" stroke-linecap="round"/>
+          <!-- 화살촉 -->
+          <path d="M0,-46 L-7,-30 L0,-36 L7,-30 Z"
+            fill="#2563eb" opacity="0.9"/>
+        </g>
+
+        <!-- 3. 파동 (위치 강조) -->
+        <circle cx="0" cy="0" r="14" fill="none"
+          stroke="rgba(59,130,246,0.45)" stroke-width="1.5">
+          <animate attributeName="r" values="11;26" dur="2.2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.8;0" dur="2.2s" repeatCount="indefinite"/>
+        </circle>
+
+        <!-- 4. 흰 테두리 원 -->
+        <circle cx="0" cy="0" r="14" fill="white"/>
+
+        <!-- 5. 파란 메인 원 -->
+        <circle cx="0" cy="0" r="11" fill="#3b82f6"/>
+
+        <!-- 6. 내부 하이라이트 -->
+        <circle cx="-3" cy="-3" r="4" fill="white" opacity="0.3"/>
+
+      </svg>
+    </div>
+
+  </div>
+</div>
+
+<div id="zoom-wrap">
+  <button class="z-btn" onclick="zoomBy(1.3)">+</button>
+  <button class="z-btn" onclick="zoomBy(0.77)">−</button>
+</div>
+<div id="scalebar">100m</div>
+
+<div id="bottombar">
+  <button class="bb-btn" onclick="document.getElementById('file-input').click()">
+    <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    파일열기
+  </button>
+  <button class="bb-btn" id="gps-btn" onclick="toggleGPS()">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+    <span id="gps-lbl">GPS시작</span>
+  </button>
+  <button id="my-btn" onclick="goToMe()">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+  </button>
+  <button class="bb-btn" onclick="shareCoord()">
+    <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    좌표공유
+  </button>
+  <button class="bb-btn" onclick="dropPin()">
+    <svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    핀추가
+  </button>
+</div>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+const pdfjsLib=window['pdfjs-dist/build/pdf'];
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ━━━ 좌표 변환 ━━━
+function toRad(d){return d*Math.PI/180;}
+function tmProject(lon,lat,lon0,lat0,k0,FE,FN){
+  const a=6378137,f=1/298.257222101,e2=2*f-f*f;
+  const phi=toRad(lat),lam=toRad(lon),lam0r=toRad(lon0),phi0r=toRad(lat0);
+  const N=a/Math.sqrt(1-e2*Math.sin(phi)**2);
+  const T=Math.tan(phi)**2,C=e2/(1-e2)*Math.cos(phi)**2,A=Math.cos(phi)*(lam-lam0r);
+  function M(p){return a*((1-e2/4-3*e2**2/64-5*e2**3/256)*p-(3*e2/8+3*e2**2/32+45*e2**3/1024)*Math.sin(2*p)+(15*e2**2/256+45*e2**3/1024)*Math.sin(4*p)-(35*e2**3/3072)*Math.sin(6*p));}
+  const ecc2=e2/(1-e2);
+  return{
+    x:k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T**2+72*C-58*ecc2)*A**5/120)+FE,
+    y:k0*(M(phi)-M(phi0r)+N*Math.tan(phi)*(A**2/2+(5-T+9*C+4*C**2)*A**4/24+(61-58*T+T**2+600*C-330*ecc2)*A**6/720))+FN
+  };
+}
+const to5186=(lon,lat)=>tmProject(lon,lat,127,38,1,200000,600000);
+const to5179=(lon,lat)=>tmProject(lon,lat,127.5,38,0.9996,1000000,2000000);
+
+// ━━━ 상태 ━━━
+let GT=null,pdfW=1,pdfH=1,stageW=1,stageH=1,fitScale=1;
+let cvW=1,cvH=1,renderDPR=1;
+let sc=1,ox=0,oy=0;
+let watchId=null,gpsOn=false,follow=true;
+let curLon=null,curLat=null;
+let crs='EPSG:5186';
+
+// 방향
+let compassHdg=null,gpsHdg=null;
+let dirMode='compass';  // 'compass' | 'gps' | 'off'
+let curRot=0,tgtRot=0,rafId=null;
+let hasHeading=false;   // 방향 정보 수신 여부
+
+// ━━━ 터치/드래그 ━━━
+const wrap=document.getElementById('map-wrap');
+const stage=document.getElementById('map-stage');
+let pinching=false,lastDist=0,dragging=false,lx=0,ly=0;
+
+function applyTf(){stage.style.transform=`translate(${ox}px,${oy}px) scale(${sc})`;updateScalebar();}
+
+wrap.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){pinching=true;dragging=false;lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
+  else{dragging=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;setFollow(false);}
+},{passive:true});
+wrap.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length===2&&pinching){
+    const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);
+    zoomAt(d/lastDist,(e.touches[0].clientX+e.touches[1].clientX)/2,(e.touches[0].clientY+e.touches[1].clientY)/2);
+    lastDist=d;
+  }else if(e.touches.length===1&&dragging){
+    ox+=e.touches[0].clientX-lx;oy+=e.touches[0].clientY-ly;
+    lx=e.touches[0].clientX;ly=e.touches[0].clientY;applyTf();
+  }
+},{passive:false});
+wrap.addEventListener('touchend',e=>{if(e.touches.length<2)pinching=false;if(e.touches.length===0)dragging=false;},{passive:true});
+wrap.addEventListener('mousedown',e=>{dragging=true;lx=e.clientX;ly=e.clientY;setFollow(false);});
+window.addEventListener('mousemove',e=>{if(!dragging)return;ox+=e.movementX;oy+=e.movementY;applyTf();});
+window.addEventListener('mouseup',()=>dragging=false);
+wrap.addEventListener('wheel',e=>{e.preventDefault();zoomAt(e.deltaY<0?1.1:0.91,e.clientX,e.clientY);},{passive:false});
+function zoomAt(r,mx,my){const ns=Math.max(0.15,Math.min(50,sc*r)),ar=ns/sc;ox=mx-(mx-ox)*ar;oy=my-(my-oy)*ar;sc=ns;applyTf();}
+function zoomBy(r){zoomAt(r,wrap.clientWidth/2,wrap.clientHeight/2);}
+
+// ━━━ PDF 로드 ━━━
+document.getElementById('file-input').addEventListener('change',e=>{const f=e.target.files[0];if(f)loadPDF(f);e.target.value='';});
+
+async function loadPDF(file){
+  showLoad('PDF 불러오는 중...');
+  let pdf;
+  try{pdf=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;}
+  catch(err){hideLoad();toast('PDF 오류: '+err.message);return;}
+
+  showLoad('지도 렌더링 중...');
+  const page=await pdf.getPage(1);
+  const vp1=page.getViewport({scale:1});
+  pdfW=vp1.width;pdfH=vp1.height;
+
+  const wrapW=wrap.clientWidth||window.innerWidth;
+  const wrapH=wrap.clientHeight||(window.innerHeight-72);
+  renderDPR=Math.min(window.devicePixelRatio||1,2);
+  fitScale=Math.min(wrapW/pdfW,wrapH/pdfH);
+
+  const rScale=fitScale*renderDPR;
+  const rvp=page.getViewport({scale:rScale});
+  const canvas=document.getElementById('pdf-canvas');
+  canvas.width=rvp.width;canvas.height=rvp.height;
+  cvW=rvp.width;cvH=rvp.height;
+  stageW=pdfW*fitScale;stageH=pdfH*fitScale;
+  canvas.style.width=stageW+'px';canvas.style.height=stageH+'px';
+  await page.render({canvasContext:canvas.getContext('2d'),viewport:rvp}).promise;
+
+  sc=1;ox=(wrapW-stageW)/2;oy=(wrapH-stageH)/2;applyTf();
+
+  showLoad('좌표 메타데이터 파싱 중...');
+  await parseMeta(pdf,vp1);
+
+  hideLoad();
+  document.getElementById('upload-overlay').style.display='none';
+  document.getElementById('topbar').style.display='block';
+  document.getElementById('bottombar').style.display='flex';
+  document.getElementById('zoom-wrap').style.display='flex';
+  document.getElementById('scalebar').style.display='block';
+  document.getElementById('compass-wrap').style.display='flex';
+  document.getElementById('dir-badge').style.display='flex';
+  startCompass();
+}
+
+async function parseMeta(pdf,vp){
+  GT=null;
+  try{
+    const raw=await pdf.getData();
+    const txt=new TextDecoder('latin1').decode(raw);
+    const lm=txt.match(/\/LGIDict\s*<<([\s\S]{20,10000}?)>>\s*endobj/);
+    if(lm){
+      const lgi=lm[1];
+      const cm=lgi.match(/\/CTM\s*\[([^\]]+)\]/);
+      const nm=lgi.match(/\/Neatline\s*\[([^\]]+)\]/);
+      if(cm&&nm){
+        const ctm=cm[1].match(/[-\d.eE+]+/g).map(Number);
+        const neat=nm[1].match(/[-\d.eE+]+/g).map(Number);
+        const [a,b,c,d,e,f]=ctm;
+        if(lgi.includes('5179'))crs='EPSG:5179';
+        else if(lgi.match(/4326|Geographic/i))crs='EPSG:4326';
+        else crs='EPSG:5186';
+        document.getElementById('coord-label').textContent=crs+' 좌표';
+        GT={a,b,c,d,e,f,minPx:neat[0],minPy:neat[1],pdfH:vp.height,pt2stage:fitScale};
+        toast('✅ 좌표 인식: '+crs);return;
+      }
+    }
+    toast('⚠️ 좌표 메타 없음 - GPS 좌표만 표시');
+  }catch(ex){toast('메타 오류: '+ex.message);}
+}
+
+// geo → stage px
+function geoToStage(gx,gy){
+  if(!GT)return null;
+  const {a,b,c,d,e,f,minPx,minPy,pdfH,pt2stage}=GT;
+  const relX=gx-e,relY=gy-f,det=a*d-b*c;
+  if(Math.abs(det)<1e-10)return null;
+  const adjX=(d*relX-c*relY)/det,adjY=(a*relY-b*relX)/det;
+  return{x:(adjX+minPx)*pt2stage, y:(pdfH-adjY-minPy)*pt2stage};
+}
+
+// ━━━ GPS ━━━
+function toggleGPS(){
+  if(!gpsOn){
+    if(!navigator.geolocation){toast('GPS 미지원');return;}
+    watchId=navigator.geolocation.watchPosition(onPos,onErr,
+      {enableHighAccuracy:true,maximumAge:0,timeout:20000});
+    gpsOn=true;
+    document.getElementById('gps-lbl').textContent='GPS중지';
+    document.getElementById('gps-btn').classList.add('on');
+    toast('📍 GPS 추적 시작');
+  }else{
+    if(watchId!=null)navigator.geolocation.clearWatch(watchId);
+    watchId=null;gpsOn=false;
+    document.getElementById('loc-marker').style.display='none';
+    document.getElementById('gps-lbl').textContent='GPS시작';
+    document.getElementById('gps-btn').classList.remove('on');
+    document.getElementById('acc-badge').textContent='대기';
+    document.getElementById('acc-badge').className='';
+    toast('GPS 중지');
+  }
+}
+
+function onPos(pos){
+  const {latitude:lat,longitude:lon,accuracy,heading}=pos.coords;
+  curLat=lat;curLon=lon;
+
+  // GPS heading
+  if(heading!=null&&!isNaN(heading)&&heading>=0){
+    gpsHdg=heading;
+    if(dirMode==='gps')setHeading(heading);
+  }
+
+  // 좌표 변환
+  let gx,gy;
+  if(crs==='EPSG:5179'){const r=to5179(lon,lat);gx=r.x;gy=r.y;}
+  else if(crs==='EPSG:4326'){gx=lon;gy=lat;}
+  else{const r=to5186(lon,lat);gx=r.x;gy=r.y;}
+
+  // 상단 UI
+  document.getElementById('coord-value').textContent=
+    `X: ${Math.round(gx).toLocaleString()}  Y: ${Math.round(gy).toLocaleString()}`;
+  const ac=Math.round(accuracy);
+  const badge=document.getElementById('acc-badge');
+  badge.textContent='±'+ac+'m';
+  badge.className=ac<=10?'ok':'bad';
+
+  // 마커 배치
+  const marker=document.getElementById('loc-marker');
+  if(GT){
+    const pt=geoToStage(gx,gy);
+    if(pt){
+      marker.style.left=pt.x+'px';
+      marker.style.top=pt.y+'px';
+      marker.style.display='block';
+      // 정확도 원
+      const mPerStagePx=Math.abs(GT.a)/GT.pt2stage;
+      const rPx=Math.max(10,Math.min(300,accuracy/mPerStagePx));
+      document.getElementById('acc-ring').setAttribute('r',rPx);
+      if(follow)centerStage(pt.x,pt.y);
+    }
+  }else{
+    marker.style.left=(stageW/2)+'px';
+    marker.style.top=(stageH/3)+'px';
+    marker.style.display='block';
+  }
+}
+
+function onErr(e){
+  const m={1:'위치권한 거부',2:'위치확인 불가',3:'GPS 시간초과'};
+  document.getElementById('acc-badge').textContent='오류';
+  document.getElementById('acc-badge').className='bad';
+  toast('GPS: '+(m[e.code]||e.message));
+}
+
+function centerStage(sx,sy){
+  const ww=wrap.clientWidth,wh=wrap.clientHeight;
+  ox=ww/2-sx*sc;oy=wh/2-sy*sc;applyTf();
+}
+function goToMe(){
+  setFollow(true);
+  if(curLon==null){toast('GPS를 먼저 시작하세요');return;}
+  let gx,gy;
+  if(crs==='EPSG:5179'){const r=to5179(curLon,curLat);gx=r.x;gy=r.y;}
+  else if(crs==='EPSG:4326'){gx=curLon;gy=curLat;}
+  else{const r=to5186(curLon,curLat);gx=r.x;gy=r.y;}
+  if(GT){const pt=geoToStage(gx,gy);if(pt)centerStage(pt.x,pt.y);}
+  toast('📍 내 위치로 이동');
+}
+function setFollow(v){follow=v;document.getElementById('my-btn').classList.toggle('on',v);}
+
+// ━━━ 방향 시스템 ━━━
+function startCompass(){
+  if(typeof DeviceOrientationEvent==='undefined'){toast('나침반 미지원 기기');return;}
+  const listen=()=>{
+    window.addEventListener('deviceorientationabsolute',onOrient,true);
+    window.addEventListener('deviceorientation',onOrient,true);
+  };
+  if(typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission()
+      .then(s=>{if(s==='granted')listen();else toast('나침반 권한이 필요합니다');})
+      .catch(()=>toast('나침반 권한 오류'));
+  }else{listen();}
+}
+
+let lastOrientT=0;
+function onOrient(e){
+  if(Date.now()-lastOrientT<60)return;
+  lastOrientT=Date.now();
+  let h=null;
+  if(e.webkitCompassHeading!=null)h=e.webkitCompassHeading;
+  else if(e.absolute&&e.alpha!=null)h=(360-e.alpha+360)%360;
+  else if(e.alpha!=null)h=(360-e.alpha+360)%360;
+  if(h==null)return;
+  compassHdg=h;
+  // 나침반 UI
+  document.getElementById('compass-svg').style.transform=`rotate(${-h}deg)`;
+  document.getElementById('compass-deg').textContent=Math.round(h)+'°';
+  if(dirMode==='compass')setHeading(h);
+}
+
+// 방향 설정 → 마커 부드럽게 회전
+function setHeading(deg){
+  if(deg==null)return;
+  if(!hasHeading){
+    hasHeading=true;
+    // 방향 정보 처음 수신 시 부채꼴 표시
+    document.getElementById('direction-cone').style.display='block';
+  }
+  tgtRot=deg;
+  if(!rafId)rafId=requestAnimationFrame(animRot);
+}
+
+// 방향 없을 때 부채꼴 숨김
+function hideDirectionCone(){
+  document.getElementById('direction-cone').style.display='none';
+  hasHeading=false;
+}
+
+function animRot(){
+  let diff=tgtRot-curRot;
+  while(diff>180)diff-=360;
+  while(diff<-180)diff+=360;
+  if(Math.abs(diff)>0.3){
+    curRot+=diff*0.18;
+    document.getElementById('loc-marker').style.transform=
+      `translate(-50%,-50%) rotate(${curRot}deg)`;
+    rafId=requestAnimationFrame(animRot);
+  }else{
+    curRot=tgtRot;
+    document.getElementById('loc-marker').style.transform=
+      `translate(-50%,-50%) rotate(${curRot}deg)`;
+    rafId=null;
+  }
+}
+
+// 방향 모드 전환 (뱃지 클릭)
+function toggleDirMode(){
+  const badge=document.getElementById('dir-badge');
+  const txt=document.getElementById('dir-badge-txt');
+  const cone=document.getElementById('direction-cone');
+  if(dirMode==='compass'){
+    dirMode='gps';
+    badge.className=''; badge.classList.add('gps');
+    txt.textContent='이동방향';
+    cone.style.display='block';
+    if(gpsHdg!=null)setHeading(gpsHdg);
+    else{cone.style.display='none';toast('이동 시 방향이 표시됩니다');}
+    toast('📍 GPS 이동방향 모드');
+  }else if(dirMode==='gps'){
+    dirMode='off';
+    badge.className=''; badge.classList.add('off');
+    txt.textContent='방향끔';
+    cone.style.display='none';
+    // 마커 수직(위쪽)으로 고정
+    tgtRot=0;if(!rafId)rafId=requestAnimationFrame(animRot);
+    toast('방향 표시 끔');
+  }else{
+    dirMode='compass';
+    badge.className='';
+    txt.textContent='나침반';
+    cone.style.display='block';
+    if(compassHdg!=null)setHeading(compassHdg);
+    toast('🧭 나침반 모드');
+  }
+}
+
+// ━━━ 기능 ━━━
+function shareCoord(){
+  if(curLon==null){toast('GPS를 먼저 시작하세요');return;}
+  let gx,gy,label;
+  if(crs==='EPSG:5179'){const r=to5179(curLon,curLat);gx=r.x;gy=r.y;label='EPSG:5179';}
+  else if(crs==='EPSG:4326'){gx=curLon;gy=curLat;label='WGS84';}
+  else{const r=to5186(curLon,curLat);gx=r.x;gy=r.y;label='EPSG:5186';}
+  const hdg=dirMode==='compass'?compassHdg:gpsHdg;
+  const txt=`[현장좌표] ${label}\nX: ${Math.round(gx).toLocaleString()} m\nY: ${Math.round(gy).toLocaleString()} m${hdg!=null?'\n방향: '+Math.round(hdg)+'°':''}\nWGS84: ${curLat.toFixed(6)}, ${curLon.toFixed(6)}`;
+  if(navigator.share)navigator.share({text:txt});
+  else if(navigator.clipboard)navigator.clipboard.writeText(txt).then(()=>toast('📋 좌표 복사됨'));
+  else alert(txt);
+}
+
+function dropPin(){
+  if(curLon==null){toast('GPS를 먼저 시작하세요');return;}
+  let gx,gy;
+  if(crs==='EPSG:5179'){const r=to5179(curLon,curLat);gx=r.x;gy=r.y;}
+  else{const r=to5186(curLon,curLat);gx=r.x;gy=r.y;}
+  const pt=GT?geoToStage(gx,gy):{x:stageW/2,y:stageH/2};
+  if(!pt){toast('지도 범위 밖');return;}
+  const pin=document.createElement('div');
+  pin.style.cssText=`position:absolute;left:${pt.x}px;top:${pt.y}px;transform:translate(-50%,-100%);font-size:28px;z-index:20;pointer-events:none;`;
+  pin.textContent='📌';
+  stage.appendChild(pin);
+  toast(`📌 X:${Math.round(gx).toLocaleString()}`);
+}
+
+function updateScalebar(){
+  if(!GT)return;
+  const mPerStagePx=Math.abs(GT.a)/GT.pt2stage;
+  const mpp=mPerStagePx/sc;
+  const targets=[1,2,5,10,20,50,100,200,500,1000,2000,5000];
+  const tgt=mpp*80;
+  const m=targets.reduce((a,b)=>Math.abs(b-tgt)<Math.abs(a-tgt)?b:a);
+  const bar=document.getElementById('scalebar');
+  bar.style.minWidth=Math.round(m/mpp)+'px';
+  bar.textContent=m>=1000?(m/1000)+'km':m+'m';
+}
+
+function showLoad(t){document.getElementById('load-txt').textContent=t;document.getElementById('loading').style.display='flex';}
+function hideLoad(){document.getElementById('loading').style.display='none';}
+let toastT;
+function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove('show'),2800);}
+</script>
+
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => {
+        console.log('SW 등록됨:', reg.scope);
+        // 업데이트 감지
+        reg.addEventListener('updatefound', () => {
+          const newSW = reg.installing;
+          newSW.addEventListener('statechange', () => {
+            if(newSW.state === 'installed' && navigator.serviceWorker.controller){
+              if(confirm('새 버전이 있습니다. 업데이트할까요?')) location.reload();
+            }
+          });
+        });
+      })
+      .catch(err => console.log('SW 등록 실패:', err));
+  });
+}
+
+// iOS Safari: 홈화면 추가 안내
+window.addEventListener('load', () => {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone;
+  const shown = sessionStorage.getItem('pwa-hint');
+  if(isIOS && !isStandalone && !shown){
+    sessionStorage.setItem('pwa-hint','1');
+    setTimeout(()=>{
+      const el = document.getElementById('toast');
+      if(el){
+        el.textContent = '📲 Safari → 공유 → 홈 화면에 추가';
+        el.classList.add('show');
+        setTimeout(()=>el.classList.remove('show'), 5000);
+      }
+    }, 2500);
+  }
+  // Android Chrome: 설치 배너
+  let deferredPrompt;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    // 설치 버튼 표시 (업로드 화면에만)
+    const installBtn = document.getElementById('install-btn');
+    if(installBtn) installBtn.style.display = 'flex';
+  });
+  window.addEventListener('appinstalled', () => {
+    const installBtn = document.getElementById('install-btn');
+    if(installBtn) installBtn.style.display = 'none';
+  });
+  window._installPWA = async () => {
+    if(!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const {outcome} = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+  };
+});
+</script>
+</body>
+</html>
