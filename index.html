@@ -302,19 +302,84 @@ input::placeholder { color: var(--text3); font-weight: 400; }
 
 /* 매도 리스트 */
 .sell-label { font-size: 11px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .07em; margin: 14px 0 8px; }
+
+/* 현재 세금 큰 카드 */
+.tax-now {
+  background: var(--red-bg);
+  border: 1.5px solid var(--red-border);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 4px;
+}
+.tax-now-top { display: flex; justify-content: space-between; align-items: center; }
+.tax-now-label { font-size: 12px; font-weight: 500; color: var(--red); }
+.tax-now-val { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--red); }
+.tax-now-sub { font-size: 11px; color: #b91c1c; margin-top: 4px; }
+
+/* 화살표 */
+.sell-arrow { text-align: center; color: var(--text3); font-size: 18px; margin: 6px 0; line-height: 1; }
+
+/* 종목 카드 */
 .sell-item {
   background: var(--bg2);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 11px 14px;
-  margin-bottom: 7px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  padding: 13px 15px;
+  margin-bottom: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
-.sell-row1 { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.sell-name { font-size: 14px; font-weight: 600; color: var(--text); }
-.sell-pnl { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
-.sell-row2 { font-family: var(--mono); font-size: 10px; color: var(--text3); line-height: 1.7; }
-.sell-after { font-size: 11px; font-weight: 500; color: var(--text2); margin-top: 4px; }
+.sell-item.is-zero {
+  border-color: var(--green-border);
+  background: var(--green-bg);
+}
+.sell-item.is-over {
+  border-color: var(--orange-border);
+  background: var(--orange-bg);
+}
+
+/* 종목명 + 손실 */
+.si-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+.si-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.si-loss { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+.si-detail { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-bottom: 10px; }
+
+/* 세금 변화 핵심 표시 */
+.si-tax-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.03);
+}
+.si-tax-before {
+  text-align: center;
+  flex: 1;
+}
+.si-tax-before .t-label { font-size: 10px; color: var(--text3); font-weight: 500; margin-bottom: 2px; }
+.si-tax-before .t-val { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--red); }
+.si-arrow { font-size: 18px; color: var(--text3); flex-shrink: 0; }
+.si-tax-after {
+  text-align: center;
+  flex: 1;
+}
+.si-tax-after .t-label { font-size: 10px; color: var(--text3); font-weight: 500; margin-bottom: 2px; }
+.si-tax-after .t-val { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+.t-val.green { color: var(--green); }
+.t-val.orange { color: var(--orange); }
+
+/* 결과 한 줄 요약 */
+.si-result {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: center;
+}
+.si-result.r-zero { background: var(--green-bg); color: #14532d; border: 1px solid var(--green-border); }
+.si-result.r-remain { background: var(--red-bg); color: #7f1d1d; border: 1px solid var(--red-border); }
+.si-result.r-over { background: var(--orange-bg); color: #7c2d12; border: 1px solid var(--orange-border); }
 
 /* 계산식 */
 .formula {
@@ -629,22 +694,82 @@ function calculate() {
     adv.innerHTML = `❗ 손실 종목이 없어요. 위에서 종목을 추가해 주세요.<br>현재 예상 세금: <strong>${fmt(tax)}</strong>`;
   }
 
+  // 핵심: 각 종목을 몇 주 팔면 세금이 딱 맞는지 계산
+  const taxBefore = Math.max(0, totalRealized - deduct) * 0.22;
+  // 세금 0원 만들려면 과세표준을 얼마나 줄여야 하나
+  const needToReduce = totalRealized - deduct; // 이만큼 손실 확정하면 과세표준 0
+
   let sellHTML = '';
-  if (sellList.length > 0) {
-    sellHTML = '<div class="sell-label">매도 권장 순서 (손실 큰 순)</div>';
-    let cum = 0;
-    sellList.forEach((s, i) => {
-      cum += s.pnl;
-      const after = Math.max(0, totalRealized + cum - deduct);
-      const afterColor = after > 0 ? '#d97706' : '#16a34a';
-      sellHTML += `<div class="sell-item">
-        <div class="sell-row1">
-          <span class="sell-name">${i+1}. ${s.name}</span>
-          <span class="sell-pnl">${fmt(s.pnl)}</span>
+  if (lossRows.length > 0) {
+    sellHTML = `<div class="sell-label">각 종목 몇 주 팔면 세금 ${fmt(taxBefore)} 없어질까?</div>
+    <div class="tax-now">
+      <div class="tax-now-top">
+        <span class="tax-now-label">없애야 할 세금</span>
+        <span class="tax-now-val">${fmt(taxBefore)}</span>
+      </div>
+    </div>`;
+
+    lossRows.forEach((s) => {
+      const lossPerShare = (s.cur * s.cfx) - (s.buy * s.bfx); // 주당 원화 손익 (음수)
+      const lossAbs = Math.abs(lossPerShare);
+
+      // needToReduce만큼 손실 필요 → 몇 주?
+      const exactShares = needToReduce / lossAbs;
+      const floorShares = Math.floor(exactShares); // 내림 → 세금 조금 남음
+      const ceilShares  = Math.ceil(exactShares);  // 올림 → 세금 초과
+
+      // 내림 팔았을 때 실제 세금
+      const netFloor = totalRealized - lossAbs * floorShares;
+      const taxFloor = Math.max(0, netFloor - deduct) * 0.22;
+
+      // 올림 팔았을 때 초과 절세
+      const netCeil = totalRealized - lossAbs * ceilShares;
+      const overCeil = netCeil < deduct ? Math.abs(netCeil - deduct) * 0.22 : 0;
+
+      // 전부 팔았을 때
+      const netAll = totalRealized - lossAbs * s.qty;
+      const taxAll = Math.max(0, netAll - deduct) * 0.22;
+      const overAll = netAll < deduct ? Math.abs(netAll - deduct) * 0.22 : 0;
+
+      const canReach = s.qty >= ceilShares;
+
+      sellHTML += `
+      <div class="sell-item" style="margin-top:8px;">
+        <div class="si-head">
+          <span class="si-name">${s.name}</span>
+          <span class="si-loss">보유 ${fmtN(s.qty)}주 · 주당 ${fmtN(Math.round(lossPerShare))}원</span>
         </div>
-        <div class="sell-row2">매수 $${s.buy.toFixed(2)} @ ${fmtN(s.bfx)}₩ → 현재 $${s.cur.toFixed(2)} @ ${fmtN(s.cfx)}₩ · ${fmtN(s.qty)}주</div>
-        <div class="sell-after" style="color:${afterColor}">↳ ${i+1}개 매도 후 과세표준: <strong>${fmt(after)}</strong></div>
+
+        ${canReach ? `
+        <div style="background:var(--red-bg);border:1px solid var(--red-border);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+          <div style="font-size:11px;font-weight:600;color:var(--red);margin-bottom:4px;">▼ ${fmtN(floorShares)}주 팔면 — 세금 부족</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;color:var(--text2);">세금 ${fmt(Math.round(taxFloor))} 남음</span>
+            <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--red);">−${fmt(Math.round(taxFloor))}</span>
+          </div>
+        </div>
+        <div style="background:var(--orange-bg);border:1px solid var(--orange-border);border-radius:8px;padding:10px 12px;margin-bottom:6px;">
+          <div style="font-size:11px;font-weight:600;color:var(--orange);margin-bottom:4px;">▲ ${fmtN(ceilShares)}주 팔면 — 세금 초과</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;color:var(--text2);">세금 0원 + 초과</span>
+            <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--orange);">+${fmt(Math.round(overCeil))}</span>
+          </div>
+        </div>` : ''}
+
+        <div style="background:${taxAll <= 0 ? 'var(--green-bg)' : 'var(--red-bg)'};border:1px solid ${taxAll <= 0 ? 'var(--green-border)' : 'var(--red-border)'};border-radius:8px;padding:10px 12px;">
+          <div style="font-size:11px;font-weight:600;color:${taxAll <= 0 ? 'var(--green)' : 'var(--red)'};margin-bottom:4px;">전부(${fmtN(s.qty)}주) 팔면</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:12px;color:var(--text2);">${taxAll <= 0 ? '세금 0원 + 초과' : '세금 남음'}</span>
+            <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:${taxAll <= 0 ? 'var(--green)' : 'var(--red)'};">
+              ${taxAll <= 0 ? '+'+fmt(Math.round(overAll)) : '−'+fmt(Math.round(taxAll))+' 남음'}
+            </span>
+          </div>
+        </div>
+        ${!canReach ? `<div class="si-result r-remain" style="margin-top:6px;">⚠️ 전부 팔아도 세금 ${fmt(Math.round(taxAll))} 남음. 다른 종목도 팔아야 해요.</div>` : ''}
       </div>`;
+    });
+  }
+  document.getElementById('sell-wrap').innerHTML = sellHTML;
     });
   }
   document.getElementById('sell-wrap').innerHTML = sellHTML;
